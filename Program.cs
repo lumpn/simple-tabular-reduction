@@ -62,7 +62,7 @@ public sealed class SRT
         currentLimit++;
     }
 
-    public void Run(Domain domain, Domain reducedDomain)
+    public bool Run(Domain domain, Domain reducedDomain)
     {
         reducedDomain.Clear();
         var gacValues = reducedDomain;
@@ -88,14 +88,31 @@ public sealed class SRT
         }
 
         // keep out-of-scope variables in domain
+        var isValid = true;
         foreach (var v in domain)
         {
             var variable = v.Key;
-            if (!scope.Contains(variable))
+            if (scope.Contains(variable))
+            {
+                // make sure the reduced domain contains a non-empty set
+                var found = false;
+                foreach (var w in reducedDomain)
+                {
+                    if (w.Key == variable)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                isValid &= found;
+            }
+            else
             {
                 reducedDomain.Add(v);
             }
         }
+
+        return isValid;
     }
 
     private bool isValidTuple(Tuple t, Domain domain)
@@ -148,12 +165,15 @@ internal static class Program
             {
                 for (int k = j + 1; k < 10; k++)
                 {
-                    candidates.Add(Create(i, j, k));
-                    candidates.Add(Create(i, k, j));
-                    candidates.Add(Create(j, i, k));
-                    candidates.Add(Create(j, k, i));
-                    candidates.Add(Create(k, i, j));
-                    candidates.Add(Create(k, j, i));
+                    if (i + j + k == 15)
+                    {
+                        candidates.Add(Create(i, j, k));
+                        candidates.Add(Create(i, k, j));
+                        candidates.Add(Create(j, i, k));
+                        candidates.Add(Create(j, k, i));
+                        candidates.Add(Create(k, i, j));
+                        candidates.Add(Create(k, j, i));
+                    }
                 }
             }
         }
@@ -184,7 +204,7 @@ internal static class Program
 
         // generate diagonals
         lines.Add(Create(m00, m11, m22));
-        lines.Add(Create(m02, m11, m02));
+        lines.Add(Create(m02, m11, m20));
 
         writer.WriteLine("{0} lines", lines.Count);
 
@@ -218,7 +238,8 @@ internal static class Program
 
         var domain = new Domain();
         domain.Add(KeyValuePair.Create(m00, 2)); // initial state 
-        for (int i = 1; i < 9; i++)
+        domain.Add(KeyValuePair.Create(m01, 7)); // initial state 
+        for (int i = m02; i < 9; i++)
         {
             for (int j = 1; j < 10; j++)
             {
@@ -234,20 +255,41 @@ internal static class Program
         do
         {
             domainSizeBefore = domain.Count;
+            var sizeBeforeStep = domainSizeBefore;
             foreach (var constraint in constraints)
             {
-                constraint.Run(domain, domain2);
+                //writer.WriteLine("constraint before step");
+                //constraint.WriteTo(writer);
+                //writer.WriteLine();
+
+                var isValid = constraint.Run(domain, domain2);
                 var tmp = domain2;
                 domain2 = domain;
                 domain = tmp;
+
+                var sizeAfterStep = domain.Count;
+                //if (sizeAfterStep < sizeBeforeStep)
+                //{
+                //    writer.WriteLine("constraint after step");
+                //    constraint.WriteTo(writer);
+                //    writer.WriteLine("domain after step: {0}", domain.Count);
+                //    domain.WriteTo(writer);
+                //    writer.WriteLine();
+                //    sizeBeforeStep = sizeAfterStep;
+                //}
+
+                if (!isValid)
+                {
+                    writer.WriteLine("failure");
+                    return;
+                }
             }
+            writer.WriteLine("domain after run: {0}", domain.Count);
             domainSizeAfter = domain.Count;
-            writer.WriteLine("domain after {0}", domain.Count);
         }
         while (domainSizeAfter < domainSizeBefore);
 
         //writer.WriteLine("domain after {0}", domain.Count);
-        writer.WriteLine();
         domain.WriteTo(writer);
         writer.WriteLine();
     }
