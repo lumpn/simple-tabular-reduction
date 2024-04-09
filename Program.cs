@@ -238,8 +238,7 @@ internal static class Program
 
         var domain = new Domain();
         domain.Add(KeyValuePair.Create(m00, 2)); // initial state 
-        domain.Add(KeyValuePair.Create(m01, 7)); // initial state 
-        for (int i = m02; i < 9; i++)
+        for (int i = m01; i < 9; i++)
         {
             for (int j = 1; j < 10; j++)
             {
@@ -291,11 +290,11 @@ internal static class Program
                 var domainSizeAfterStep = domain.Count;
                 if (domainSizeAfterStep < domainSizeBeforeStep)
                 {
-                    writer.WriteLine("constraint after step");
-                    constraint.WriteTo(writer);
-                    writer.WriteLine("domain after step: {0}", domain.Count);
-                    domain.WriteTo(writer);
-                    writer.WriteLine();
+                    //writer.WriteLine("constraint after step");
+                    //constraint.WriteTo(writer);
+                    //writer.WriteLine("domain after step: {0}", domain.Count);
+                    //domain.WriteTo(writer);
+                    //writer.WriteLine();
                     domainSizeBeforeStep = domainSizeAfterStep;
                 }
 
@@ -338,7 +337,7 @@ internal static class Program
         // guess a v-value!
         var originalLimits = constraints.Select(p => p.currentLimit).ToArray();
         var originalDomain = new Domain(domain);
-        foreach (var v in originalDomain)
+        foreach (var v in originalDomain.OrderBy(p => p.Key)) // TODO Jonas: guess most constrained variable first
         {
             var count = originalDomain.Count(p => p.Key == v.Key);
             if (count < 2) continue;
@@ -375,7 +374,6 @@ internal static class Program
         // we have guessed all possible values and nothing worked
         return SolutionType.Failed;
     }
-
 
     private static void PaperExample()
     {
