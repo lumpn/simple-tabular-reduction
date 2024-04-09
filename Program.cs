@@ -50,7 +50,7 @@ public sealed class SRT
 {
     private readonly HashSet<int> scope = new HashSet<int>();
     private readonly List<Tuple> table = new List<Tuple>();
-    private int currentLimit = 0;
+    public int currentLimit = 0;
 
     public void Add(Tuple t)
     {
@@ -249,13 +249,34 @@ internal static class Program
 
         writer.WriteLine("domain before: {0}", domain.Count);
 
-        // run once
         var domain2 = new Domain();
-        int domainSizeBefore, domainSizeAfter;
+        var variables = domain.Select(p => p.Key).Distinct().ToArray();
+        var result = Solve(constraints, domain, domain2, variables, writer);
+        switch (result)
+        {
+            case SolutionType.None: writer.WriteLine("inconclusive"); break;
+            case SolutionType.Solved: writer.WriteLine("solved"); break;
+            case SolutionType.Failed: writer.WriteLine("failed"); break;
+        }
+
+        writer.WriteLine("domain after: {0}", domain.Count);
+        domain.WriteTo(writer);
+    }
+
+    private enum SolutionType
+    {
+        None,
+        Solved,
+        Failed,
+    }
+
+    private static SolutionType Solve(List<SRT> constraints, Domain domain, Domain domain2, int[] variables, TextWriter writer)
+    {
+        int domainSizeBeforeRun, domainSizeAfterRun;
         do
         {
-            domainSizeBefore = domain.Count;
-            var sizeBeforeStep = domainSizeBefore;
+            domainSizeBeforeRun = domain.Count;
+            var domainSizeBeforeStep = domainSizeBeforeRun;
             foreach (var constraint in constraints)
             {
                 //writer.WriteLine("constraint before step");
@@ -267,32 +288,94 @@ internal static class Program
                 domain2 = domain;
                 domain = tmp;
 
-                var sizeAfterStep = domain.Count;
-                //if (sizeAfterStep < sizeBeforeStep)
-                //{
-                //    writer.WriteLine("constraint after step");
-                //    constraint.WriteTo(writer);
-                //    writer.WriteLine("domain after step: {0}", domain.Count);
-                //    domain.WriteTo(writer);
-                //    writer.WriteLine();
-                //    sizeBeforeStep = sizeAfterStep;
-                //}
+                var domainSizeAfterStep = domain.Count;
+                if (domainSizeAfterStep < domainSizeBeforeStep)
+                {
+                    writer.WriteLine("constraint after step");
+                    constraint.WriteTo(writer);
+                    writer.WriteLine("domain after step: {0}", domain.Count);
+                    domain.WriteTo(writer);
+                    writer.WriteLine();
+                    domainSizeBeforeStep = domainSizeAfterStep;
+                }
 
                 if (!isValid)
                 {
                     writer.WriteLine("failure");
-                    return;
+                    return SolutionType.Failed;
                 }
             }
             writer.WriteLine("domain after run: {0}", domain.Count);
-            domainSizeAfter = domain.Count;
+            domainSizeAfterRun = domain.Count;
         }
-        while (domainSizeAfter < domainSizeBefore);
+        while (domainSizeAfterRun < domainSizeBeforeRun);
 
-        //writer.WriteLine("domain after {0}", domain.Count);
+        // no more forward progress. solved?
+        var solved = true;
+        foreach (var variable in variables)
+        {
+            var count = domain.Count(p => p.Key == variable);
+            if (count == 0)
+            {
+                return SolutionType.Failed;
+            }
+            if (count > 1)
+            {
+                solved = false;
+                break;
+            }
+        }
+
+        if (solved)
+        {
+            return SolutionType.Solved;
+        }
+
+        writer.WriteLine("domain before guess {0}", domain.Count);
         domain.WriteTo(writer);
         writer.WriteLine();
+
+        // guess a v-value!
+        var originalLimits = constraints.Select(p => p.currentLimit).ToArray();
+        var originalDomain = new Domain(domain);
+        foreach (var v in originalDomain)
+        {
+            var count = originalDomain.Count(p => p.Key == v.Key);
+            if (count < 2) continue;
+
+            // lock in choice
+            writer.WriteLine("guessing {0} := {1}", v.Key, v.Value);
+            domain.Clear();
+            domain.Add(v);
+            foreach (var w in originalDomain)
+            {
+                if (w.Key != v.Key)
+                {
+                    domain.Add(w);
+                }
+            }
+
+            // recurse
+            var solutionType = Solve(constraints, domain, domain2, variables, writer);
+            switch (solutionType)
+            {
+                case SolutionType.None:
+                case SolutionType.Solved:
+                    return solutionType;
+            }
+
+            // failed. backtrack! restore original limits.
+            writer.WriteLine("backtracking");
+            for (int i = 0; i < originalLimits.Length; i++)
+            {
+                constraints[i].currentLimit = originalLimits[i];
+            }
+        }
+
+        // we have guessed all possible values and nothing worked
+        return SolutionType.Failed;
     }
+
 
     private static void PaperExample()
     {
