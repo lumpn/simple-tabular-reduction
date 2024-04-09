@@ -2,8 +2,6 @@
 using System.IO;
 using System.Linq;
 using Domain = System.Collections.Generic.HashSet<System.Collections.Generic.KeyValuePair<int, int>>;
-using Value = int;
-using Variable = int;
 using VValue = System.Collections.Generic.KeyValuePair<int, int>;
 
 public static class WriteExtentions
@@ -50,16 +48,24 @@ public struct Tuple
 
 public sealed class SRT
 {
+    private readonly HashSet<int> scope = new HashSet<int>();
     private readonly List<Tuple> table = new List<Tuple>();
+    private int currentLimit = 0;
 
     public void Add(Tuple t)
     {
+        foreach (var v in t.vs)
+        {
+            scope.Add(v.Key);
+        }
         table.Add(t);
+        currentLimit++;
     }
 
-    public (int, Domain) Run(int currentLimit, Domain domain)
+    public void Run(Domain domain, Domain reducedDomain)
     {
-        var gacValues = new Domain();
+        reducedDomain.Clear();
+        var gacValues = reducedDomain;
 
         // remove invalid tuples from table
         for (int i = currentLimit - 1; i >= 0; i--)
@@ -81,7 +87,15 @@ public sealed class SRT
             }
         }
 
-        return (currentLimit, gacValues);
+        // keep out-of-scope variables in domain
+        foreach (var v in domain)
+        {
+            var variable = v.Key;
+            if (!scope.Contains(variable))
+            {
+                reducedDomain.Add(v);
+            }
+        }
     }
 
     private bool isValidTuple(Tuple t, Domain domain)
@@ -98,7 +112,7 @@ public sealed class SRT
 
     public void WriteTo(TextWriter writer)
     {
-        for (int i = 0; i < table.Count; i++)
+        for (int i = 0; i < currentLimit; i++)
         {
             writer.Write(i);
             writer.Write(": ");
@@ -113,12 +127,139 @@ internal static class Program
 {
     private static void Main(string[] args)
     {
-        Variable x = 0;
-        Variable y = 1;
-        Variable z = 2;
-        Value a = 0;
-        Value b = 1;
-        Value c = 2;
+        MagicSquare3x3();
+    }
+
+    private static void MagicSquare3x3()
+    {
+        var writer = System.Console.Out;
+
+        // values: 1, .., 9
+        // positions: 3x3 matrix indexed 0, .., 8
+        // sum of each row, colum, and diagonal: 15
+        // no number used twice
+        // top-left cell value: 2 (initial state)
+
+        // generate a list of tuples that add up to 15
+        var candidates = new List<Tuple>();
+        for (int i = 1; i < 10; i++)
+        {
+            for (int j = i + 1; j < 10; j++)
+            {
+                for (int k = j + 1; k < 10; k++)
+                {
+                    candidates.Add(Create(i, j, k));
+                    candidates.Add(Create(i, k, j));
+                    candidates.Add(Create(j, i, k));
+                    candidates.Add(Create(j, k, i));
+                    candidates.Add(Create(k, i, j));
+                    candidates.Add(Create(k, j, i));
+                }
+            }
+        }
+        writer.WriteLine("{0} candidates", candidates.Count);
+
+        // generate rows, columns, and diagonals
+        var m00 = 0;
+        var m01 = 1;
+        var m02 = 2;
+        var m10 = 3;
+        var m11 = 4;
+        var m12 = 5;
+        var m20 = 6;
+        var m21 = 7;
+        var m22 = 8;
+
+        var lines = new List<Tuple>();
+
+        // generate rows
+        lines.Add(Create(m00, m01, m02));
+        lines.Add(Create(m10, m11, m12));
+        lines.Add(Create(m10, m11, m12));
+
+        // generate colums
+        lines.Add(Create(m00, m10, m20));
+        lines.Add(Create(m01, m11, m21));
+        lines.Add(Create(m02, m12, m22));
+
+        // generate diagonals
+        lines.Add(Create(m00, m11, m22));
+        lines.Add(Create(m02, m11, m02));
+
+        writer.WriteLine("{0} lines", lines.Count);
+
+        // generate constraints
+        var constraints = new List<SRT>();
+        var vValues = new List<VValue>();
+        foreach (var line in lines)
+        {
+            var lvs = line.vs;
+            var srt = new SRT();
+            foreach (var candidate in candidates)
+            {
+                var cvs = candidate.vs;
+                for (int i = 0; i < lvs.Length; i++)
+                {
+                    var v = KeyValuePair.Create(lvs[i].Value, cvs[i].Value);
+                    vValues.Add(v);
+                }
+
+                var tuple = new Tuple
+                {
+                    vs = vValues.ToArray(),
+                };
+                vValues.Clear();
+                srt.Add(tuple);
+            }
+            constraints.Add(srt);
+        }
+
+        writer.WriteLine("{0} constraints", constraints.Count);
+
+        var domain = new Domain();
+        domain.Add(KeyValuePair.Create(m00, 2)); // initial state 
+        for (int i = 1; i < 9; i++)
+        {
+            for (int j = 1; j < 10; j++)
+            {
+                domain.Add(KeyValuePair.Create(i, j));
+            }
+        }
+
+        writer.WriteLine("domain before: {0}", domain.Count);
+
+        // run once
+        var domain2 = new Domain();
+        int domainSizeBefore, domainSizeAfter;
+        do
+        {
+            domainSizeBefore = domain.Count;
+            foreach (var constraint in constraints)
+            {
+                constraint.Run(domain, domain2);
+                var tmp = domain2;
+                domain2 = domain;
+                domain = tmp;
+            }
+            domainSizeAfter = domain.Count;
+            writer.WriteLine("domain after {0}", domain.Count);
+        }
+        while (domainSizeAfter < domainSizeBefore);
+
+        //writer.WriteLine("domain after {0}", domain.Count);
+        writer.WriteLine();
+        domain.WriteTo(writer);
+        writer.WriteLine();
+    }
+
+    private static void PaperExample()
+    {
+        var x = 0;
+        var y = 1;
+        var z = 2;
+        var a = 0;
+        var b = 1;
+        var c = 2;
 
         var srt = new SRT();
         srt.Add(Create(a, a, a));
@@ -131,8 +272,6 @@ internal static class Program
         srt.Add(Create(c, a, a));
         srt.Add(Create(c, b, a));
         srt.Add(Create(c, c, a));
-
-        var limit = 10;
 
         var domain = new Domain();
         for (int i = 0; i < 3; i++)
@@ -150,22 +289,15 @@ internal static class Program
         srt.WriteTo(writer);
         writer.WriteLine();
 
-        writer.Write("Limit: ");
-        writer.WriteLine(limit);
-        writer.WriteLine();
-
         writer.WriteLine("Domain");
         domain.WriteTo(writer);
         writer.WriteLine();
 
-        var (reducedLimit, reducedDomain) = srt.Run(limit, domain);
+        var reducedDomain = new Domain();
+        srt.Run(domain, reducedDomain);
 
         writer.WriteLine("Reduced Table");
         srt.WriteTo(writer);
-        writer.WriteLine();
-
-        writer.Write("Reduced Limit: ");
-        writer.WriteLine(reducedLimit);
         writer.WriteLine();
 
         writer.WriteLine("Reduced Domain");
